@@ -2,8 +2,7 @@
 # Copyright 2014 Davide Corio <davide.corio@abstract.it>
 # License LGPL-3.0 or later (http://www.gnu.org/licenses/lgpl).
 
-from odoo import fields, models, api, _
-from odoo.exceptions import ValidationError
+from odoo import fields, models, api
 
 
 class ResCompany(models.Model):
@@ -12,12 +11,6 @@ class ResCompany(models.Model):
     fatturapa_fiscal_position_id = fields.Many2one(
         'fatturapa.fiscal_position', 'Fiscal Position',
         help="Fiscal position used by electronic invoice",
-        )
-    fatturapa_sequence_id = fields.Many2one(
-        'ir.sequence', 'Sequence',
-        help="The univocal progressive of the file is represented by "
-             "an alphanumeric sequence of maximum length 5, "
-             "its values are included in 'A'-'Z' and '0'-'9'"
         )
     fatturapa_art73 = fields.Boolean('Art. 73')
     fatturapa_pub_administration_ref = fields.Char(
@@ -49,26 +42,11 @@ class ResCompany(models.Model):
         help='The fields must be entered only when the seller/provider is '
              'non-resident, with a stable organization in Italy'
         )
-
-    @api.multi
-    @api.constrains(
-        'fatturapa_sequence_id'
-    )
-    def _check_fatturapa_sequence_id(self):
-        for company in self:
-            if company.fatturapa_sequence_id:
-                if company.fatturapa_sequence_id.use_date_range:
-                    raise ValidationError(_(
-                        "Sequence %s can't use subsequences."
-                    ) % company.fatturapa_sequence_id.name)
-                journal = self.env['account.journal'].search([
-                    ('sequence_id', '=', company.fatturapa_sequence_id.id)
-                ], limit=1)
-                if journal:
-                    raise ValidationError(_(
-                        "Sequence %s already used by journal %s. Please select"
-                        " another one."
-                    ) % (company.fatturapa_sequence_id.name, journal.name))
+    fatturapa_preview_style = fields.Selection([
+        ('fatturaordinaria_v1.2.1.xsl', 'FatturaOrdinaria v1.2.1'),
+        ('FoglioStileAssoSoftware_v1.1.xsl', 'AssoSoftware v1.1')],
+        string='Preview Format Style', required=True,
+        default='fatturaordinaria_v1.2.1.xsl')
 
 
 class AccountConfigSettings(models.TransientModel):
@@ -78,13 +56,6 @@ class AccountConfigSettings(models.TransientModel):
         related='company_id.fatturapa_fiscal_position_id',
         string="Fiscal Position",
         help='Fiscal position used by electronic invoice'
-        )
-    fatturapa_sequence_id = fields.Many2one(
-        related='company_id.fatturapa_sequence_id',
-        string="Sequence",
-        help="The univocal progressive of the file is represented by "
-             "an alphanumeric sequence of maximum length 5, "
-             "its values are included in 'A'-'Z' and '0'-'9'"
         )
     fatturapa_art73 = fields.Boolean(
         related='company_id.fatturapa_art73',
@@ -137,24 +108,19 @@ class AccountConfigSettings(models.TransientModel):
         help='The fields must be entered only when the seller/provider is '
              'non-resident, with a stable organization in Italy'
         )
+    fatturapa_preview_style = fields.Selection(
+        related='company_id.fatturapa_preview_style',
+        string="Preview Format Style", required=True
+        )
 
     @api.onchange('company_id')
     def onchange_company_id(self):
         res = super(AccountConfigSettings, self).onchange_company_id()
         if self.company_id:
             company = self.company_id
-            default_sequence = self.env['ir.sequence'].search([
-                ('code', '=', 'account.invoice.fatturapa')
-            ])
-            default_sequence = (
-                default_sequence[0].id if default_sequence else False)
             self.fatturapa_fiscal_position_id = (
                 company.fatturapa_fiscal_position_id and
                 company.fatturapa_fiscal_position_id.id or False
-                )
-            self.fatturapa_sequence_id = (
-                company.fatturapa_sequence_id and
-                company.fatturapa_sequence_id.id or default_sequence
                 )
             self.fatturapa_art73 = (
                 company.fatturapa_art73 or False
@@ -190,9 +156,11 @@ class AccountConfigSettings(models.TransientModel):
                 company.fatturapa_stabile_organizzazione and
                 company.fatturapa_stabile_organizzazione.id or False
                 )
+            self.fatturapa_preview_style = (
+                company.fatturapa_preview_style or False
+                )
         else:
             self.fatturapa_fiscal_position_id = False
-            self.fatturapa_sequence_id = False
             self.fatturapa_art73 = False
             self.fatturapa_pub_administration_ref = False
             self.fatturapa_rea_office = False
@@ -203,4 +171,5 @@ class AccountConfigSettings(models.TransientModel):
             self.fatturapa_tax_representative = False
             self.fatturapa_sender_partner = False
             self.fatturapa_stabile_organizzazione = False
+            self.fatturapa_preview_style = 'fatturaordinaria_v1.2.1.xsl'
         return res

@@ -27,6 +27,7 @@ class DdTFromPickings(models.TransientModel):
             'goods_description_id': False,
             'transportation_reason_id': False,
             'transportation_method_id': False,
+            'carrier_id': False,
         }
         type_list = []
         partner = False
@@ -170,6 +171,18 @@ class DdTFromPickings(models.TransientModel):
                     picking.ddt_type.default_transportation_method_id)
                 values['transportation_method_id'] = (
                     transportation_method_id.id)
+        carrier_id = False
+        for picking in self.picking_ids:
+            if picking.sale_id and picking.sale_id.ddt_carrier_id:
+                if carrier_id and (
+                    carrier_id != (
+                        picking.sale_id.ddt_carrier_id)):
+                    raise UserError(
+                        _("Selected Pickings have "
+                          "different carrier"))
+                carrier_id = picking.sale_id.ddt_carrier_id
+                values['carrier_id'] = (
+                    carrier_id.id)
 
         if len(self.picking_ids) == 1 and self.picking_ids[0].sale_id:
             # otherwise weights and volume should be different
@@ -200,11 +213,3 @@ class DdTFromPickings(models.TransientModel):
             'views': [(form_id, 'form'), (tree_id, 'tree')],
             'type': 'ir.actions.act_window',
         }
-
-
-class StockPicking(models.Model):
-    _inherit = "stock.picking"
-
-    ddt_type = fields.Many2one(
-        'stock.ddt.type',
-        related='picking_type_id.default_location_src_id.type_ddt_id')

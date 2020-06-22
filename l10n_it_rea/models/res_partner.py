@@ -10,7 +10,7 @@ class ResPartner(models.Model):
     rea_office = fields.Many2one(
         'res.country.state', string='Office Province')
     rea_code = fields.Char('REA Code', size=20)
-    rea_capital = fields.Float('Capital')
+    rea_capital = fields.Float('Share Capital')
     rea_member_type = fields.Selection(
         [('SU', 'Unique Member'),
          ('SM', 'Multiple Members')], 'Member Type')
@@ -19,6 +19,6 @@ class ResPartner(models.Model):
          ('LN', 'Not in liquidation')], 'Liquidation State')
 
     _sql_constraints = [
-        ('rea_code_uniq', 'unique (rea_code, company_id)',
+        ('rea_code_uniq', 'unique (rea_office, rea_code, company_id)',
          'The rea code code must be unique per company !'),
     ]

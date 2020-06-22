@@ -19,8 +19,9 @@ class StockPickingCarriageCondition(models.Model):
     _name = "stock.picking.carriage_condition"
     _description = "Carriage Condition"
 
-    name = fields.Char(string='Carriage Condition', required=True)
-    note = fields.Text(string='Note')
+    name = fields.Char(string='Carriage Condition', required=True,
+                       translate=True)
+    note = fields.Text(string='Note', translate=True)
 
 
 class StockPickingGoodsDescription(models.Model):
@@ -28,8 +29,9 @@ class StockPickingGoodsDescription(models.Model):
     _name = 'stock.picking.goods_description'
     _description = "Description of Goods"
 
-    name = fields.Char(string='Description of Goods', required=True)
-    note = fields.Text(string='Note')
+    name = fields.Char(string='Description of Goods', required=True,
+                       translate=True)
+    note = fields.Text(string='Note', translate=True)
 
 
 class StockPickingTransportationReason(models.Model):
@@ -37,8 +39,9 @@ class StockPickingTransportationReason(models.Model):
     _name = 'stock.picking.transportation_reason'
     _description = 'Reason for Transportation'
 
-    name = fields.Char(string='Reason For Transportation', required=True)
-    note = fields.Text(string='Note')
+    name = fields.Char(string='Reason For Transportation', required=True,
+                       translate=True)
+    note = fields.Text(string='Note', translate=True)
     to_be_invoiced = fields.Boolean(string='To be Invoiced')
 
 
@@ -47,8 +50,9 @@ class StockPickingTransportationMethod(models.Model):
     _name = 'stock.picking.transportation_method'
     _description = 'Method of Transportation'
 
-    name = fields.Char(string='Method of Transportation', required=True)
-    note = fields.Text(string='Note')
+    name = fields.Char(string='Method of Transportation', required=True,
+                       translate=True)
+    note = fields.Text(string='Note', translate=True)
 
 
 class StockDdtType(models.Model):
@@ -80,7 +84,7 @@ class StockPickingPackagePreparation(models.Model):
 
     _inherit = 'stock.picking.package.preparation'
     _rec_name = 'display_name'
-    _order = 'date desc'
+    _order = 'ddt_number, date desc'
 
     @api.multi
     @api.depends('transportation_reason_id.to_be_invoiced')
@@ -177,7 +181,7 @@ class StockPickingPackagePreparation(models.Model):
         # ----- Check if exist a stock picking whose state is 'done'
         for record_picking in self.picking_ids:
             if record_picking.state == 'done':
-                raise UserError((
+                raise UserError(_(
                     "Impossible to put in pack a picking whose state "
                     "is 'done'"))
         for package in self:
@@ -350,6 +354,31 @@ class StockPickingPackagePreparation(models.Model):
         return res
 
     @api.multi
+    def other_operations_on_ddt(self, invoice):
+        """ Once invoices are created with stockable products, we add them
+        all the invoiceable services available in the SO related to the
+        DDTs linked to the invoice.
+
+        Override this method in order to execute other additional operation on
+        the invoices created from DDT.
+        """
+        precision = self.env['decimal.precision'].precision_get(
+            'Product Unit of Measure')
+        for ddt in self:
+            order_ids = ddt.line_ids.mapped('sale_line_id.order_id').filtered(
+                lambda o: not o.ddt_invoice_exclude)
+            line_ids = order_ids.mapped('order_line').filtered(
+                lambda l: not float_is_zero(
+                    l.qty_to_invoice, precision_digits=precision) and
+                l.product_id.type == 'service' and
+                not l.product_id.ddt_invoice_exclude)
+
+            # we call the Sale method for creating invoice
+            for line in line_ids:
+                qty = line.qty_to_invoice
+                line.invoice_line_create(invoice.id, qty)
+
+    @api.multi
     def action_invoice_create(self):
         """
         Create the invoice associated to the DDT.
@@ -402,12 +431,15 @@ class StockPickingPackagePreparation(models.Model):
                     invoices[group_key].write(vals)
                     ddt.invoice_id = invoices[group_key].id
 
-                if line.product_uom_qty > 0:
+                if line.allow_invoice_line():
                     line.invoice_line_create(
                         invoices[group_key].id, line.product_uom_qty)
             if references.get(invoices.get(group_key)):
                 if ddt not in references[invoices[group_key]]:
                     references[invoice] = references[invoice] | ddt
+
+            # Allow additional operations from ddt
+            ddt.other_operations_on_ddt(invoice)
 
         if not invoices:
             raise UserError(_('There is no invoicable line.'))
@@ -686,3 +718,11 @@ class StockPickingPackagePreparationLine(models.Model):
                 # If not tracking by lots, quantity is not relevant
                 res[lot] = False
         return res
+
+    @api.multi
+    def allow_invoice_line(self):
+        """This method allows or not the invoicing of a specific DDT line.
+        It can be inherited for different purposes, e.g. for proper invoicing
+        of kit."""
+        self.ensure_one()
+        return self.product_uom_qty > 0
